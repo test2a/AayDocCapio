@@ -281,7 +281,7 @@ For genuinely large files that queue instead of downloading instantly:
 `step(msg, page=None)` that emits numbered, URL-tagged progress lines, e.g.:
 
 [AIS-OPEN] (6) Clicking a#AIS  |  url: https://eportal.incometax.gov.in/...
-[AIS-DL]   (5) Download saved: ABCDE1234F-AIS-2025_26.pdf
+[AIS-DL]   (5) Download saved: AABCP1234F-AIS-2025_26.pdf
 
 Comprehensive step logs are deliberately **kept permanently** across login, 26AS,
 and AIS/TIS — they make any future portal change trivially diagnosable.
@@ -943,9 +943,9 @@ Evidence and per-client inventories: `PlansofThisProject/F-63_evidence/`.
 
 ### Live verification
 
-- `AAAPL1234C`: 15CA (1 filing) + 35 (2 filings) → 14 files, second run
+- `AAAPL1234C` (placeholder): 15CA (1 filing) + 35 (2 filings) → 14 files, second run
   reports "Up to date (8 file(s) already present)", 0 downloads.
-- `AAAPL5678F`: 10IE (1) + 3CB-3CD (13) → ZIP forms, JSON, receipts and
+- `AAAPL5678F` (placeholder): 10IE (1) + 3CB-3CD (13) → ZIP forms, JSON, receipts and
   attachments downloaded; labelled "⚠ Partially Completed" for older 3CB-3CD
   filings whose buttons the portal itself blocks after the Session Timeout.
 - Offline: `test_filed_forms.py` (9 tests) plus the existing
