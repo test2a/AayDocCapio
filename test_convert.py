@@ -9,7 +9,7 @@ from automation.ais_converter import convert_ais_json
 def test():
     json_path = "testdata/Raw JSON/SampleClient_2024-25_AIS_18062026.json"
     pan = "AABCP1234F"
-    dob = "09-07-1979"
+    dob = "01-01-1980"
     try:
         res = convert_ais_json(json_path, log_callback=print, pan=pan, dob=dob)
         print("Success! Output file:", res)
