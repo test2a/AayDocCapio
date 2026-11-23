@@ -980,7 +980,8 @@ def _case_open_from_meta(meta: dict) -> bool:
 
 def build_cases(root: str, assessees: list[dict],
                 case_state: dict | None = None,
-                today: date | None = None) -> list[Case]:
+                today: date | None = None,
+                doc_overrides: dict | None = None) -> list[Case]:
     """Build one :class:`Case` per proceeding directory under ``root``.
 
     ``assessees`` is the vault list (keys ``pan``, ``name``, ``email``, ``cc``,
@@ -991,12 +992,25 @@ def build_cases(root: str, assessees: list[dict],
     ``today`` is injected into the initial status/urgency derivation so tests
     remain deterministic; call :func:`derive_status` again after a date
     change if needed.
+
+    ``doc_overrides`` (F-26) maps a document override uid to ``{"replied":
+    bool, "ignored": bool}`` so a reply/ignore action taken in the Litigation
+    hub is reflected here — a manually replied notice counts as responded and
+    an ignored one drops out of the open/overdue set. The uid is read from
+    ``doc.inferred["override_uid"]``.
     """
 
     current = today or _today()
     by_pan = _assessee_index(assessees)
     state = case_state or {}
+    overrides = doc_overrides or {}
     cases: list[Case] = []
+
+    def _override_for(doc):
+        uid = (doc.inferred or {}).get("override_uid")
+        if not uid:
+            return None
+        return overrides.get(uid)
 
     for client_entry, year_name, eproc_root in _iter_eproc_roots(root):
         if "-" in client_entry:
@@ -1062,6 +1076,18 @@ def build_cases(root: str, assessees: list[dict],
 
             _link_docs(case)
             _build_appeals(case)
+
+            # F-26: stamp each doc with its override uid and apply any manual
+            # reply/ignore set from the Litigation hub.
+            for doc in case.docs:
+                doc.inferred = dict(doc.inferred or {})
+                doc.inferred.setdefault("override_uid", f"it:{doc.id}")
+                ov = _override_for(doc)
+                if ov:
+                    if ov.get("replied"):
+                        doc.responded = True
+                    if ov.get("ignored"):
+                        doc.inferred["ignored"] = True
 
             # Derive statuses once with the case treated as open so an
             # unreplied notice is visible while deciding the final open flag.
@@ -1166,6 +1192,8 @@ def derive_status(doc: Doc, case: Case, today: date | None = None) -> str:
             return "Closed" if later_order else "Replied"
         if later_order:
             return "Closed"
+        if (doc.inferred or {}).get("ignored"):
+            return "Ignored"
         deadline = _parse_date(doc.reply_deadline)
         if deadline is not None and deadline < current:
             return "Overdue"
