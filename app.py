@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
     QToolButton, QMenu, QCalendarWidget, QSystemTrayIcon, QButtonGroup,
     QGraphicsDropShadowEffect, QStackedWidget, QRadioButton,
-    QGridLayout, QAbstractButton,
+    QGridLayout, QAbstractButton, QScrollArea,
 )
 from PyQt6.QtCore import (
     Qt, pyqtSignal, pyqtSlot, QTimer, QMetaObject, Q_ARG, QUrl,
@@ -2303,8 +2303,32 @@ class AayDocCapioApp(QMainWindow):
         return card
 
     def _dl_toggle_all_clients(self, checked: bool):
+        """Check/uncheck only the clients currently visible (matching the
+        active search filter) — so a filtered "Select all" can't silently
+        touch rows the user can't see."""
         for cb in self._dl_client_cbs.values():
+            cb.blockSignals(True)
             cb.setChecked(checked)
+            cb.blockSignals(False)
+        visible_ids = set(self._dl_client_cbs.keys())
+        if checked:
+            self._dl_selected_ids |= visible_ids
+        else:
+            self._dl_selected_ids -= visible_ids
+        self._dl_update_summary()
+
+    def _dl_on_client_toggle(self, client_id: str, checked: bool):
+        if checked:
+            self._dl_selected_ids.add(client_id)
+        else:
+            self._dl_selected_ids.discard(client_id)
+        self._dl_update_summary()
+
+    def _dl_apply_client_filter(self, text: str):
+        """Rebuild Section A's rows filtered by `text` (name / PAN / group).
+        Selection state lives in self._dl_selected_ids so filtering never
+        loses which clients were already ticked."""
+        self._dl_refresh_clients()
 
     def _dl_refresh_clients(self):
         """(Re)build Section A's client rows from self.assessee_list. Called
@@ -2333,6 +2357,23 @@ class AayDocCapioApp(QMainWindow):
         table.setRowCount(0)
         self._dl_client_cbs = {}
         assessees = getattr(self, "assessee_list", [])
+
+        q = ""
+        search = getattr(self, "_dl_search", None)
+        if search is not None:
+            q = search.text().strip().lower()
+        if not hasattr(self, "_dl_selected_ids"):
+            self._dl_selected_ids = {a.get("id") for a in assessees}
+        else:
+            known = {a.get("id") for a in assessees}
+            self._dl_selected_ids &= known
+
+        if q:
+            assessees = [a for a in assessees
+                         if q in (a.get("name") or "").lower()
+                         or q in (a.get("pan") or "").lower()
+                         or q in (a.get("group") or "").lower()]
+
         table.setRowCount(len(assessees))
         for i, a in enumerate(assessees):
             cb_container = QWidget()
@@ -2348,9 +2389,10 @@ class AayDocCapioApp(QMainWindow):
                 f"border-radius:3px;background:{t.bg_checkbox};}}"
                 f"QCheckBox::indicator:checked{{background:{t.accent_it};border-color:{t.accent_it};"
                 f"image:url(resources/check_white.png);}}")
-            cb.setChecked(True)
-            cb.toggled.connect(self._dl_update_summary)
-            self._dl_client_cbs[a.get("id")] = cb
+            cid = a.get("id")
+            cb.setChecked(cid in self._dl_selected_ids)
+            cb.toggled.connect(lambda checked, _cid=cid: self._dl_on_client_toggle(_cid, checked))
+            self._dl_client_cbs[cid] = cb
             cl.addWidget(cb)
             table.setCellWidget(i, 0, cb_container)
 
@@ -2425,7 +2467,8 @@ class AayDocCapioApp(QMainWindow):
         if n_docs == 0:
             QMessageBox.warning(self, "Nothing Selected", "Please select at least one document type.")
             return
-        checked_ids = {a_id for a_id, cb in self._dl_client_cbs.items() if cb.isChecked()}
+        known_ids = {a.get("id") for a in getattr(self, "assessee_list", [])}
+        checked_ids = set(getattr(self, "_dl_selected_ids", set())) & known_ids
         if not checked_ids:
             QMessageBox.warning(self, "Selection Required", "Please select at least one client.")
             return
@@ -2450,9 +2493,29 @@ class AayDocCapioApp(QMainWindow):
         self._dl_doc_cbs: dict[str, QCheckBox] = {}
 
         page = QWidget()
-        outer = QVBoxLayout(page)
-        outer.setContentsMargins(24, 24, 24, 20)
-        outer.setSpacing(18)
+        page.setObjectName("dlDocPage")
+        page.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        page.setStyleSheet(f"QWidget#dlDocPage{{background:{t.bg_window};}}")
+        page_v = QVBoxLayout(page)
+        page_v.setContentsMargins(0, 0, 0, 0)
+
+        # Whole tab body scrolls as one page so short windows degrade
+        # gracefully instead of clipping the footer / doc grid.
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet(
+            f"QScrollArea{{background:transparent;border:none;}}"
+            f"QScrollArea > QWidget > QWidget{{background:transparent;}}")
+        content = QWidget()
+        content.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        content.setStyleSheet(f"QWidget{{background:{t.bg_window};}}")
+        outer = QVBoxLayout(content)
+        outer.setContentsMargins(24, 20, 24, 16)
+        outer.setSpacing(12)
+        scroll.setWidget(content)
+        page_v.addWidget(scroll)
 
         outer.addWidget(_lbl("Download Documents", 14, bold=True))
         sub = QLabel("Pick clients, pick documents, then run — one batch, unattended.")
@@ -2463,8 +2526,15 @@ class AayDocCapioApp(QMainWindow):
         sec_a = QVBoxLayout()
         sec_a.setSpacing(8)
         a_hdr = QHBoxLayout()
+        a_hdr.setSpacing(8)
         a_hdr.addWidget(_lbl("A   Select Clients", 12, bold=True, color=t.accent_it))
-        a_hdr.addStretch(1)
+        self._dl_search = QLineEdit()
+        self._dl_search.setPlaceholderText("🔍  Search by name, PAN or group…")
+        self._dl_search.setMinimumHeight(30)
+        self._dl_search.setClearButtonEnabled(True)
+        self._dl_search.setAttribute(Qt.WidgetAttribute.WA_MacShowFocusRect, False)
+        self._dl_search.textChanged.connect(self._dl_apply_client_filter)
+        a_hdr.addWidget(self._dl_search, 1)
         select_all_cb = QCheckBox("Select all")
         select_all_cb.setChecked(True)
         select_all_cb.toggled.connect(self._dl_toggle_all_clients)
@@ -2504,7 +2574,8 @@ class AayDocCapioApp(QMainWindow):
         self._dl_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._dl_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self._dl_table.setShowGrid(False)
-        self._dl_table.setMaximumHeight(220)
+        self._dl_table.setMinimumHeight(260)
+        self._dl_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._dl_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         self._dl_table.setColumnWidth(0, 34)
         self._dl_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -2518,8 +2589,8 @@ class AayDocCapioApp(QMainWindow):
             f"QHeaderView::section{{background-color:{t.bg_header};border:none;"
             f"border-bottom:1px solid {t.border};font-weight:bold;color:{t.text_muted};"
             f"font-size:10px;height:28px;padding-left:4px;}}")
-        sec_a.addWidget(self._dl_table)
-        outer.addLayout(sec_a)
+        sec_a.addWidget(self._dl_table, 1)
+        outer.addLayout(sec_a, 1)
         self._dl_refresh_clients()
 
         # ── Section B: Select Documents ──────────────────────────────────────
@@ -2573,13 +2644,12 @@ class AayDocCapioApp(QMainWindow):
         sec_c.setStyleSheet(
             f"QFrame#execBar{{background:{t.bg_panel};border:1px solid {t.border};border-radius:10px;}}")
         c_layout = QHBoxLayout(sec_c)
-        c_layout.setContentsMargins(16, 12, 16, 12)
-        c_layout.addWidget(_lbl("C", 12, bold=True, color=t.accent_it))
-        c_layout.addSpacing(10)
-        self._dl_summary_lbl = _lbl("", 12, bold=True)
+        c_layout.setContentsMargins(14, 6, 14, 6)
+        c_layout.setSpacing(12)
+        self._dl_summary_lbl = _lbl("", 11, bold=True)
         c_layout.addWidget(self._dl_summary_lbl)
         c_layout.addStretch(1)
-        run_btn = _btn("Download Selected", "primary", height=36, icon="btn_run.png")
+        run_btn = _btn("Download Selected", "primary", height=30, icon="btn_run.png")
         run_btn.clicked.connect(self._dl_run)
         c_layout.addWidget(run_btn)
         outer.addWidget(sec_c)
