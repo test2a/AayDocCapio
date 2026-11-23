@@ -20,20 +20,21 @@ TEXT_SUFFIXES = (
 )
 
 FORBIDDEN_LITERALS = [
-    "adgnito", "GSTLOGIN01",
-    "Sample Pvt Ltd",
-    "SAMPLE TECHNOLOGIES",
-    "AAAPL1234C",
-    "AAAPL5678F",
-    "AABCP1234F",
-    "ABCD12345E",
-    "Sample Deductor",
-    "testpass",
-    "AABCP1234F", "AABCP1235G", "AABCP1237J", "AABCP1236H", "AABCP1236H",
-    "XXXXX0000A", "XXXXX0000B", "XXXXX0000C", "XXXXX0000D",
-    "Sample Client A", "Sample Client B", "Sample Client C", "Sample Client", "SAMPLE PAYER",
-    "SecretGst@test", "Gst@test", "Gst@1",
-    "testpass",
+    "adgnito", "adgnito24",
+    "Adgnito Pvt Ltd",
+    "ADGNITO TECHNOLOGIES",
+    "AVQPB4769C",
+    "AFBPA8322B",
+    "AFCPB9287R",
+    "AMRA16635D",
+    "Altaf Hussain",
+    "Advocate@1234",
+    "AAAPT0001A", "AAAPT0002A", "AAAPT0002B", "AAAPT0003A", "AAAPT0003C",
+    "FGHIJ5678K", "LMNOP9012Q", "RSTUV3456W", "RTKSG1234R",
+    "Priya Mehta", "Rajesh Verma", "Rakesh Gupta", "Rajesh Kumar", "RAJA SOOD",
+    "VikasBanga", "Vikas Banga",
+    "SecretGst1", "Gst@123",
+    "itdpass",
 ]
 
 PLACEHOLDER_ALLOWLIST = {
